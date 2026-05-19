@@ -1,0 +1,40 @@
+# Logs (keep .gitkeep placeholder)
+logs/*.log
+!logs/.gitkeep
+
+# Backups (keep .gitkeep placeholder)
+backups/*.tar.gz
+backups/*.tar
+backups/*.zip
+!backups/.gitkeep
+
+# Environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Docker
+docker-data/
+
+# Grafana
+grafana/data/
+
+# Prometheus
+prometheus/data/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+# Screenshot text outputs (keep PNGs)
+screenshots/*_output.txt
+generate_screenshots.py
