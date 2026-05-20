@@ -1,0 +1,226 @@
+# ============================================================
+# Prometheus Alert Rules
+# Author: Vatsalya Patel | github.com/lnvpatel
+#
+# Groups:
+#   1. host_resources   – CPU, memory, disk, swap
+#   2. host_network     – network errors, packet drops
+#   3. host_services    – node-exporter, prometheus health
+#   4. host_disk_io     – disk I/O saturation
+# ============================================================
+
+groups:
+
+  # ── Host Resource Alerts ────────────────────────────────────
+  - name: host_resources
+    rules:
+
+      # CPU Usage > 80% for 5 minutes
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ printf \"%.1f\" $value }}% (threshold: 80%) for more than 5 minutes."
+          runbook: "Check with: top, ps aux --sort=-%cpu | head -10"
+
+      # CPU Usage > 95% for 2 minutes (critical)
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: CPU overloaded on {{ $labels.instance }}"
+          description: "CPU usage is {{ printf \"%.1f\" $value }}% — system is severely overloaded."
+          runbook: "Run: ps aux --sort=-%cpu | head -20 to find culprit process"
+
+      # Memory Usage > 80% for 5 minutes
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ printf \"%.1f\" $value }}% (threshold: 80%)."
+          runbook: "Check with: free -h, ps aux --sort=-%mem | head -10"
+
+      # Memory Usage > 95% for 2 minutes (critical)
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: Memory nearly exhausted on {{ $labels.instance }}"
+          description: "Memory usage is {{ printf \"%.1f\" $value }}%. OOM killer may activate soon."
+          runbook: "Drop page cache: sync && echo 3 > /proc/sys/vm/drop_caches"
+
+      # Disk Usage > 80% on any filesystem
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|devtmpfs|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|devtmpfs|squashfs"})) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: "Disk {{ $labels.mountpoint }} is {{ printf \"%.1f\" $value }}% full."
+          runbook: "Check with: df -h, du -sh /var/* | sort -rh | head -10"
+
+      # Disk Usage > 95% (critical)
+      - alert: CriticalDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|devtmpfs|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|devtmpfs|squashfs"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: Disk almost full on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: "Disk {{ $labels.mountpoint }} is {{ printf \"%.1f\" $value }}% full. Write operations may fail."
+          runbook: "Immediately free space: journalctl --vacuum-size=500M && apt clean"
+
+      # Swap Usage > 50%
+      - alert: HighSwapUsage
+        expr: (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High swap usage on {{ $labels.instance }}"
+          description: "Swap usage is {{ printf \"%.1f\" $value }}% — system may be under memory pressure."
+          runbook: "Check with: free -h, swapon -s, ps aux --sort=-%mem | head -10"
+
+      # Load Average > number of cores
+      - alert: HighLoadAverage
+        expr: node_load1 > on(instance) count by(instance)(node_cpu_seconds_total{mode="idle"})
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High load average on {{ $labels.instance }}"
+          description: "1-minute load average {{ printf \"%.2f\" $value }} exceeds CPU core count."
+          runbook: "Check with: uptime, ps aux --sort=-%cpu | head -10"
+
+      # Inode Usage > 80%
+      - alert: HighInodeUsage
+        expr: (1 - (node_filesystem_files_free{fstype!~"tmpfs|devtmpfs|squashfs"} / node_filesystem_files{fstype!~"tmpfs|devtmpfs|squashfs"})) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High inode usage on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: "Inode usage on {{ $labels.mountpoint }} is {{ printf \"%.1f\" $value }}%. May not be able to create new files."
+          runbook: "Check with: df -i, find / -maxdepth 3 -type f | wc -l"
+
+  # ── Host Network Alerts ─────────────────────────────────────
+  - name: host_network
+    rules:
+
+      # Network receive errors
+      - alert: NetworkReceiveErrors
+        expr: rate(node_network_receive_errs_total{device!="lo"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network receive errors on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "{{ printf \"%.0f\" $value }} errors/sec on interface {{ $labels.device }}."
+          runbook: "Check with: ip -s link show {{ $labels.device }}"
+
+      # Network transmit errors
+      - alert: NetworkTransmitErrors
+        expr: rate(node_network_transmit_errs_total{device!="lo"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network transmit errors on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "{{ printf \"%.0f\" $value }} transmit errors/sec on {{ $labels.device }}."
+          runbook: "Check with: ip -s link show {{ $labels.device }}, ethtool {{ $labels.device }}"
+
+      # Network interface down
+      - alert: NetworkInterfaceDown
+        expr: node_network_up{device!="lo"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Network interface DOWN on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "Interface {{ $labels.device }} is down."
+          runbook: "Check with: ip link show {{ $labels.device }}, sudo ip link set {{ $labels.device }} up"
+
+  # ── Service Health Alerts ───────────────────────────────────
+  - name: host_services
+    rules:
+
+      # Node Exporter is down
+      - alert: NodeExporterDown
+        expr: up{job="node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node Exporter is DOWN"
+          description: "Cannot scrape Node Exporter metrics. Host metrics are unavailable."
+          runbook: "Check: docker compose ps node-exporter, docker compose logs node-exporter"
+
+      # Prometheus itself is unhealthy (targets not being scraped)
+      - alert: PrometheusTargetMissing
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus target is DOWN: {{ $labels.job }} on {{ $labels.instance }}"
+          description: "Prometheus cannot scrape target {{ $labels.job }} at {{ $labels.instance }}."
+          runbook: "Check: curl http://{{ $labels.instance }}/metrics"
+
+      # systemd service failed (via node_exporter systemd collector)
+      - alert: SystemdServiceFailed
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "systemd unit FAILED on {{ $labels.instance }}: {{ $labels.name }}"
+          description: "Service {{ $labels.name }} is in failed state."
+          runbook: "Run: systemctl status {{ $labels.name }}, journalctl -u {{ $labels.name }} -n 50"
+
+  # ── Disk I/O Alerts ─────────────────────────────────────────
+  - name: host_disk_io
+    rules:
+
+      # Disk I/O utilization > 80% (disk saturation)
+      - alert: HighDiskIOUtilization
+        expr: rate(node_disk_io_time_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk I/O utilization on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "Disk {{ $labels.device }} I/O utilization is {{ printf \"%.1f\" $value }}%."
+          runbook: "Check with: iostat -x 1 5, iotop -o"
+
+      # Disk read latency > 100ms
+      - alert: HighDiskReadLatency
+        expr: rate(node_disk_read_time_seconds_total[5m]) / rate(node_disk_reads_completed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk read latency on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "Disk read latency is {{ printf \"%.0f\" $value }}ms (threshold: 100ms)."
+          runbook: "Check disk health: smartctl -a /dev/{{ $labels.device }}"
+
+      # Disk write latency > 100ms
+      - alert: HighDiskWriteLatency
+        expr: rate(node_disk_write_time_seconds_total[5m]) / rate(node_disk_writes_completed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk write latency on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "Disk write latency is {{ printf \"%.0f\" $value }}ms (threshold: 100ms)."
+          runbook: "Check disk health: smartctl -a /dev/{{ $labels.device }}"

@@ -1,0 +1,25 @@
+# ============================================================
+# Grafana Datasource Provisioning
+# Automatically configures Prometheus as a datasource on startup
+# Author: Vatsalya Patel | github.com/lnvpatel
+# ============================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://prometheus:9090
+    basicAuth: false
+    isDefault: true
+    version: 1
+    editable: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      prometheusVersion: 2.45.0
+      scrapeInterval: 15s
+      queryTimeout: 60s
+      timeInterval: 15s

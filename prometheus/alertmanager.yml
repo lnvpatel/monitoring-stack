@@ -1,0 +1,102 @@
+# ============================================================
+# Alertmanager Configuration
+# Author: Vatsalya Patel | github.com/lnvpatel
+#
+# Routes alerts to appropriate receivers based on severity.
+# Default receiver: console log (no external service needed)
+#
+# To enable email or Slack:
+#   1. Uncomment the relevant receiver below
+#   2. Fill in your credentials
+#   3. Restart alertmanager: docker compose restart alertmanager
+# ============================================================
+
+global:
+  # How long to wait before re-sending a resolved alert
+  resolve_timeout: 5m
+
+  # ── SMTP Email Settings (uncomment to enable) ──────────────
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alerts@yourdomain.com'
+  # smtp_auth_username: 'youremail@gmail.com'
+  # smtp_auth_password: 'your-app-password'   # Use Gmail App Password
+  # smtp_require_tls: true
+
+# ── Routing Tree ──────────────────────────────────────────────
+route:
+  # Default receiver for all alerts
+  receiver: 'console-log'
+
+  # Group alerts by alertname + instance so similar alerts batch
+  group_by: ['alertname', 'instance', 'severity']
+
+  # Wait this long before sending first alert notification
+  group_wait: 30s
+
+  # Wait this long before sending a new group of alerts
+  group_interval: 5m
+
+  # Resend alert if still firing after this duration
+  repeat_interval: 4h
+
+  # ── Sub-routes: route by severity ─────────────────────────
+  routes:
+    # Critical alerts – send immediately
+    - match:
+        severity: critical
+      receiver: 'console-log'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts – standard routing
+    - match:
+        severity: warning
+      receiver: 'console-log'
+      repeat_interval: 4h
+
+# ── Inhibition Rules ──────────────────────────────────────────
+# Suppress warning if critical is already firing for same instance
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# ── Receivers ─────────────────────────────────────────────────
+receivers:
+
+  # Default: log to console (always works, no config needed)
+  - name: 'console-log'
+    # No external integrations – alerts visible in Alertmanager UI
+    # Access: http://localhost:9093
+
+  # ── Email Receiver (uncomment + configure to enable) ────────
+  # - name: 'email-alerts'
+  #   email_configs:
+  #     - to: 'youremail@gmail.com'
+  #       send_resolved: true
+  #       headers:
+  #         subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} – {{ .CommonAnnotations.summary }}'
+
+  # ── Slack Receiver (uncomment + configure to enable) ────────
+  # To get webhook URL: api.slack.com/apps → Create App → Incoming Webhooks
+  # - name: 'slack-alerts'
+  #   slack_configs:
+  #     - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+  #       channel: '#alerts'
+  #       send_resolved: true
+  #       title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+  #       text: >-
+  #         {{ range .Alerts }}
+  #         *Alert:* {{ .Annotations.summary }}
+  #         *Description:* {{ .Annotations.description }}
+  #         *Severity:* {{ .Labels.severity }}
+  #         *Instance:* {{ .Labels.instance }}
+  #         {{ end }}
+
+  # ── PagerDuty (uncomment + configure to enable) ─────────────
+  # - name: 'pagerduty'
+  #   pagerduty_configs:
+  #     - routing_key: 'YOUR_PAGERDUTY_INTEGRATION_KEY'
+  #       description: '{{ .CommonAnnotations.description }}'

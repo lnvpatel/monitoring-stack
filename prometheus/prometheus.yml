@@ -1,12 +1,72 @@
-global:
-  scrape_interval: 15s
+# ============================================================
+# Prometheus Configuration
+# Author: Vatsalya Patel | github.com/lnvpatel
+#
+# Scrapes:
+#   - Prometheus itself (self-monitoring)
+#   - Node Exporter (host OS metrics)
+#
+# Alert rules loaded from: alert.rules.yml
+# Alertmanager target: alertmanager:9093
+# ============================================================
 
+global:
+  scrape_interval:     15s   # How often to scrape targets
+  evaluation_interval: 15s   # How often to evaluate alert rules
+  scrape_timeout:      10s   # Per-scrape timeout
+
+  # Labels added to all time series and alerts from this server
+  external_labels:
+    monitor: 'monitoring-stack'
+    environment: 'homelab'
+    maintainer: 'lnvpatel'
+
+# ── Alert Rules ───────────────────────────────────────────────
+rule_files:
+  - "alert.rules.yml"
+
+# ── Alertmanager Integration ──────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      timeout: 10s
+
+# ── Scrape Configurations ─────────────────────────────────────
 scrape_configs:
 
+  # Self-monitoring: Prometheus scrapes itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scheme: http
 
+  # Node Exporter: Linux host OS metrics
+  # Covers CPU, memory, disk, network, filesystem, systemd, processes
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['node-exporter:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(:[0-9]+)?'
+        replacement: '${1}'
+
+  # Grafana self-monitoring (optional)
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    metrics_path: /metrics
+    scheme: http
+
+  # Alertmanager self-monitoring (optional)
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+    metrics_path: /metrics
+
+# ── Remote Write (uncomment to send metrics to remote storage) ─
+# remote_write:
+#   - url: "http://remote-storage:8086/api/v1/prom/write"
